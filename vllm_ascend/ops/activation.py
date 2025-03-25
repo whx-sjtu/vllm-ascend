@@ -17,12 +17,13 @@
 
 import torch
 from vllm.model_executor.layers.activation import SiluAndMul
+from vllm_ascend.ops.registry import OpRegistry
 
 
 def silu_and_mul_forward_oot(self, x: torch.Tensor) -> torch.Tensor:
     import torch_npu
 
-    out = torch_npu.npu_swiglu(x)
+    out = OpRegistry.get_op("silu_and_mul")(x)
     return out
 
 

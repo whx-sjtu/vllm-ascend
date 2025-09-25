@@ -49,7 +49,7 @@ from vllm.distributed.parallel_state import get_tp_group
 from vllm_ascend.distributed.parallel_state import (get_mlp_tp_group,
                                                     get_otp_group)
 from vllm_ascend.utils import (dense_optim_enable, matmul_allreduce_enable,
-                               mlp_tp_enable, oproj_tp_enable)
+                               mlp_tp_enable, oproj_tp_enable, shared_expert_dp_enabled)
 
 
 class CustomTensorParallelOp:
@@ -385,7 +385,7 @@ class DenseOptimRowParallelOp(CustomRowParallelOp):
         bias_ = None if (self.tp_rank > 0 or self.skip_bias_add) else self.bias
 
         if self.tp_size == 1 or not self.reduce_results:
-            output = self.quant_method.apply(self, input_parallel, bias=bias_)
+            output = self.quant_method.apply(self.layer, input_parallel, bias=bias_)
         else:
             output_parallel = self.quant_method.apply(self.layer,
                                                       input_parallel,
@@ -410,7 +410,7 @@ def get_column_parallel_op(
 ) -> Tuple[
         Optional[Union[MLPColumnParallelOp, DenseOptimMergedColumnParallelOp,
                        DenseOptimQKVParallelOp]], int, int]:
-    if disable_tp:
+    if disable_tp or ("shared_experts.gate_up_proj" in prefix and shared_expert_dp_enabled()):
         return None, 0, 1
 
     custom_op: Optional[Union[
@@ -420,9 +420,9 @@ def get_column_parallel_op(
     ]] = None
     if "gate_up_proj" in prefix and mlp_tp_enable():
         custom_op = MLPColumnParallelOp(layer)
-    elif "gate_up_proj" in prefix and dense_optim_enable():
+    elif "gate_up_proj" in prefix and "shared_experts" not in prefix and dense_optim_enable():
         custom_op = DenseOptimMergedColumnParallelOp(layer)
-    elif dense_optim_enable():
+    elif "shared_experts" not in prefix and dense_optim_enable():
         custom_op = DenseOptimQKVParallelOp(layer, prefix)
 
     if custom_op is not None:
@@ -436,7 +436,7 @@ def get_row_parallel_op(
 ) -> Tuple[Optional[Union[MLPRowParallelOp, OProjRowParallelOp,
                           MatmulAllreduceRowParallelOp,
                           DenseOptimRowParallelOp]], int, int]:
-    if disable_tp:
+    if disable_tp or ("shared_experts.down_proj" in prefix and shared_expert_dp_enabled()):
         return None, 0, 1
 
     custom_op: Optional[Union[MLPRowParallelOp, OProjRowParallelOp,
@@ -448,7 +448,7 @@ def get_row_parallel_op(
         custom_op = OProjRowParallelOp(layer)
     elif matmul_allreduce_enable():
         custom_op = MatmulAllreduceRowParallelOp(layer)
-    elif dense_optim_enable():
+    elif "shared_experts" not in prefix and dense_optim_enable():
         custom_op = DenseOptimRowParallelOp(layer, prefix)
 
     if custom_op is not None:

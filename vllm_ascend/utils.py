@@ -589,6 +589,8 @@ def matmul_allreduce_enable() -> bool:
 def dense_optim_enable() -> bool:
     return envs_ascend.VLLM_ASCEND_ENABLE_DENSE_OPTIMIZE
 
+def shared_expert_dp_enabled() -> bool:
+    return get_ascend_config().enable_shared_expert_dp or envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM
 
 def is_moe_model(vllm_config: VllmConfig):
     config = vllm_config.model_config.hf_config

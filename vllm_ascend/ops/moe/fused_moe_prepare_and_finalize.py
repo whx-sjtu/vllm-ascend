@@ -406,7 +406,7 @@ class FusedMoEPrepareAndFinalizeWithNaiveMulticast(FusedMoEPrepareAndFinalize):
         """
         self.enable_shared_expert_dp = enable_shared_expert_dp
 
-        if self.moe_config.dp_size > 1:
+        if self.moe_config.dp_size > 1 and not get_forward_context().flashcomm_v1_enabled:
             self.cu_tokens_across_dp_cpu = get_forward_context(
             ).dp_metadata.cu_tokens_across_dp_cpu
             hidden_states = self._naive_multicast(hidden_states,
@@ -416,6 +416,12 @@ class FusedMoEPrepareAndFinalizeWithNaiveMulticast(FusedMoEPrepareAndFinalize):
             else:
                 router_logits = self._naive_multicast(
                     router_logits, self.cu_tokens_across_dp_cpu)
+        elif get_forward_context().flashcomm_v1_enabled:
+            hidden_states = torch.ops.vllm.maybe_all_gather_and_maybe_unpad(hidden_states, True, True)
+            if rm_router_logits:
+                router_logits, _ = gate(hidden_states)
+            else:
+                router_logits = torch.ops.vllm.maybe_all_gather_and_maybe_unpad(router_logits, True, True)
 
         return hidden_states, router_logits, None
 
@@ -431,14 +437,16 @@ class FusedMoEPrepareAndFinalizeWithNaiveMulticast(FusedMoEPrepareAndFinalize):
         Returns:
             Tensor with shape [local_num_tokens, hidden_size]
         """
-        if self.moe_config.dp_size > 1 and not self.enable_shared_expert_dp:
+        if self.moe_config.dp_size > 1 and not get_forward_context().flashcomm_v1_enabled:
             start = 0 if self.moe_config.dp_rank == 0 else self.cu_tokens_across_dp_cpu[
                 self.moe_config.dp_rank - 1]
             end = self.cu_tokens_across_dp_cpu[self.moe_config.dp_rank]
             hidden_states = get_dp_group().all_reduce(
                 hidden_states)  # Sum across DP
             hidden_states = hidden_states[start:end, :]
-
+        elif get_forward_context().flashcomm_v1_enabled:
+            hidden_states = torch.ops.vllm.maybe_pad_and_reduce(hidden_states, True)
+        # TODO(realliujiaxu) make flash comm 1 compitable with reduce_results=True like Qwen MoE
         if reduce_results and (self.moe_config.tp_size > 1
                                or self.moe_config.ep_size > 1):
             hidden_states = tensor_model_parallel_all_reduce(hidden_states)

@@ -11,6 +11,7 @@ from vllm.forward_context import (BatchDescriptor, get_forward_context,
                                   set_forward_context)
 
 import vllm_ascend.envs as envs_ascend
+from vllm_ascend.utils import is_moe_model
 
 
 class FusedMoEState(Enum):
@@ -105,15 +106,14 @@ def set_ascend_forward_context(
         # Currently, it is an empirical value. In normal scenarios, if the concurrency exceeds this threshold,
         # the performance benefits can be maximized. Conversely, if the concurrency is below the threshold,
         # the performance may degrade due to the switching of communication methods.
-        flashcomm_v1_enabled = envs_ascend.VLLM_ASCEND_ENABLE_DENSE_OPTIMIZE and \
-            envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM and \
-            tp_world_size > 1 and \
-            num_tokens is not None and num_tokens > 1000
-
-        if flashcomm_v1_enabled:
-            pad_size = (tp_world_size -
-                        (num_tokens % tp_world_size)) % tp_world_size
-            forward_context.pad_size = pad_size
+        if is_moe_model(vllm_config):
+            # TODO(realliujiaxu) flash comm for alltoall and mc2, then remove moe_comm_type == MoECommType.NAIVE_MULTICAST
+            flashcomm_v1_enabled = envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM and moe_comm_type == MoECommType.NAIVE_MULTICAST
+        else:
+            flashcomm_v1_enabled = envs_ascend.VLLM_ASCEND_ENABLE_DENSE_OPTIMIZE and \
+                envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM and \
+                tp_world_size > 1 and \
+                num_tokens is not None and num_tokens > 1000
 
         forward_context.flashcomm_v1_enabled = flashcomm_v1_enabled
 
@@ -161,10 +161,21 @@ def set_ascend_forward_context(
 
         dp_world_size = get_dp_group().world_size
         if dp_world_size > 1 and forward_context.dp_metadata is not None:
+            # FIXME cu_tokens_across_dp_cpu and max_tokens_across_dp_cpu should be cpu tensor
+            forward_context.dp_metadata.cu_tokens_across_dp_cpu = forward_context.dp_metadata.cu_tokens_across_dp_cpu.cpu()
             max_tokens_across_dp = forward_context.dp_metadata.max_tokens_across_dp_cpu.item(
             )
+            if flashcomm_v1_enabled:
+                padded_length = (max_tokens_across_dp + tp_world_size - 1) // tp_world_size * tp_world_size
+                pad_size = padded_length - num_tokens
+                forward_context.padded_length = padded_length
+                forward_context.pad_size = pad_size
         else:
             max_tokens_across_dp = num_tokens
+            if flashcomm_v1_enabled:
+                pad_size = (tp_world_size -
+                            (num_tokens % tp_world_size)) % tp_world_size
+                forward_context.pad_size = pad_size
 
         forward_context.max_tokens_across_dp = max_tokens_across_dp
 

@@ -61,6 +61,7 @@ _SLEEP_MODE_ENABLED = None
 _CURRENT_STREAM = None
 _ASCEND_CUSTOMOP_IS_REIGISTERED = False
 
+_IS_MOE_MODEL = None
 
 def is_310p():
     global _IS_310P
@@ -593,9 +594,11 @@ def shared_expert_dp_enabled() -> bool:
     return get_ascend_config().enable_shared_expert_dp or envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM
 
 def is_moe_model(vllm_config: VllmConfig):
-    config = vllm_config.model_config.hf_config
-    return any('experts' in key.lower() for key in config.to_dict())
-
+    global _IS_MOE_MODEL
+    if _IS_MOE_MODEL is None:
+        config = vllm_config.model_config.hf_config
+        _IS_MOE_MODEL = any('experts' in key.lower() for key in config.to_dict())
+    return _IS_MOE_MODEL
 
 def weak_ref_tensor(tensor: Any) -> Any:
     """

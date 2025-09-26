@@ -212,7 +212,8 @@ class AscendFusedMoE(FusedMoE):
 
         forward_context = get_forward_context()
         hidden_states, router_logits = forward_context.moe_comm_method.prepare(
-            hidden_states=hidden_states, router_logits=router_logits)
+            hidden_states=hidden_states, router_logits=router_logits,
+            enable_shared_expert_dp=shared_expert_dp_enabled())
 
         # Matrix multiply.
         final_hidden_states = self.quant_method.apply(

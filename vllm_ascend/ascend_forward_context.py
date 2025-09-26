@@ -107,8 +107,8 @@ def set_ascend_forward_context(
         # the performance benefits can be maximized. Conversely, if the concurrency is below the threshold,
         # the performance may degrade due to the switching of communication methods.
         if is_moe_model(vllm_config):
-            # TODO(realliujiaxu) flash comm for alltoall and mc2, then remove moe_comm_type == MoECommType.NAIVE_MULTICAST
-            flashcomm_v1_enabled = envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM and moe_comm_type == MoECommType.NAIVE_MULTICAST
+            # TODO(realliujiaxu) flash comm for alltoall
+            flashcomm_v1_enabled = envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM
         else:
             flashcomm_v1_enabled = envs_ascend.VLLM_ASCEND_ENABLE_DENSE_OPTIMIZE and \
                 envs_ascend.VLLM_ASCEND_ENABLE_FLASHCOMM and \

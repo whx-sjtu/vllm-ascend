@@ -191,13 +191,13 @@ direct_register_custom_op(op_name="maybe_chunk_residual",
 
 direct_register_custom_op(op_name="maybe_all_gather_and_maybe_unpad",
                           op_func=_maybe_all_gather_and_maybe_unpad_impl,
-                          fake_impl=lambda x, label: x,
+                          fake_impl=lambda x, label=True,is_moe=False: x,
                           mutates_args=[],
                           dispatch_key="PrivateUse1")
 
 direct_register_custom_op(op_name="maybe_pad_and_reduce",
                           op_func=_maybe_pad_and_reduce_impl,
-                          fake_impl=lambda x: x,
+                          fake_impl=lambda x,is_moe=False: x,
                           mutates_args=[],
                           dispatch_key="PrivateUse1")
 

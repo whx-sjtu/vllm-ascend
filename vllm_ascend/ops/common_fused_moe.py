@@ -376,7 +376,7 @@ def _maybe_all_reduce_tensor_model_parallel_impl(
 
 direct_register_custom_op(op_name="maybe_all_reduce_tensor_model_parallel",
                           op_func=_maybe_all_reduce_tensor_model_parallel_impl,
-                          fake_impl=lambda x, label: x,
+                          fake_impl=lambda x: x,
                           mutates_args=[],
                           dispatch_key="PrivateUse1")
 

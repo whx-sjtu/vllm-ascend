@@ -333,9 +333,7 @@ class NPUWorker(WorkerBase):
         return self.model_runner.pin_lora(lora_id)
 
     def execute_dummy_batch(self) -> None:
-        aclgraph_mode = self.vllm_config.compilation_config.cudagraph_mode
-        aclgraph_runtime_mode = aclgraph_mode.mixed_mode()
-        self.model_runner._dummy_run(1, aclgraph_runtime_mode=aclgraph_runtime_mode)
+        self.model_runner._dummy_run(1, uniform_decode=True)
 
     def _init_worker_distributed_environment(self) -> None:
         """Initialize the distributed environment."""

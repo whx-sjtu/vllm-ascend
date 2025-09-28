@@ -2377,7 +2377,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
             with_prefill = True
 
         attn_metadata = self._build_attention_metadata(
-            with_prefill,
+            False,
             num_reqs,
             num_tokens,
             max_query_len,

@@ -178,6 +178,7 @@ class AscendFusedMoE(FusedMoE):
         local_num_experts = (torch.sum(
             self.expert_map != -1) if self.expert_map is not None else
                              self.global_num_experts)
+        self.expert_map = self.expert_map.to("npu")
         if self.dynamic_eplb:
             self.moe_load = torch.zeros(local_num_experts, dtype=torch.int64)
 

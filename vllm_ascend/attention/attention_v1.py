@@ -492,6 +492,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
             value = self.value_cache.view(  # type: ignore
                 num_block, block_size, -1)
 
+            #print(f"in attentionv1 block_table={attn_metadata.block_tables.shape}")
             output, _ = torch_npu.npu_fused_infer_attention_score(
                 query=query,
                 key=key,

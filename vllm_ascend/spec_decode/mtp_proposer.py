@@ -87,8 +87,10 @@ class MtpProposer(Proposer):
                 self.model = TorchairDeepSeekMTP(
                     vllm_config=self.vllm_config).to(target_device)
             else:
-                self.model = CustomDeepSeekMTP(
-                    vllm_config=self.vllm_config).to(target_device)
+                from vllm.model_executor.models.glm4_moe_mtp import Glm4MoeMTP
+                self.model = Glm4MoeMTP(vllm_config=self.vllm_config).to(target_device)
+                #self.model = CustomDeepSeekMTP(
+                #    vllm_config=self.vllm_config).to(target_device)
 
         draft_attn_layer_names = (
             get_layers_from_vllm_config(self.vllm_config, Attention).keys() -
@@ -388,7 +390,7 @@ class MtpProposer(Proposer):
             max_query_len=max_query_len,
             actual_seq_lengths_q=self.runner.actual_seq_lengths_q,
             block_table_tensor=self.runner.input_batch.block_table[0].
-            get_device_tensor(),
+            get_device_tensor()[:batch_size],
             slot_mapping=target_slot_mapping,
             positions=target_positions,
             attn_mask=self.runner.attn_mask,
@@ -436,6 +438,7 @@ class MtpProposer(Proposer):
         aclgraph_runtime_mode, batch_descriptor = \
             self.runner.aclgraph_dispatcher.dispatch(batch_descriptor)
 
+        #print(f"start mtp forward")
         for step in range(self.num_speculative_tokens):
             with set_ascend_forward_context(
                     attn_metadata,
@@ -473,6 +476,7 @@ class MtpProposer(Proposer):
                             hidden_states[:num_input_tokens],
                             kv_caches=self.runner.kv_caches[-1:])
 
+            #print(f"after mtp forward")
             num_indices = last_token_indices.shape[0]
             if lmhead_tp_enable():
                 if not self.runner.with_prefill:
@@ -484,7 +488,7 @@ class MtpProposer(Proposer):
                     (0, max_num_reqs_across_dp - num_indices))
 
             sample_hidden_states = hidden_states[last_token_indices]
-            logits = self.model.compute_logits(sample_hidden_states, None)
+            logits = self.model.compute_logits(sample_hidden_states)
             if lmhead_tp_enable() and num_indices < logits.shape[0]:
                 logits = logits[:num_indices]
             draft_token_ids = logits.argmax(dim=-1)

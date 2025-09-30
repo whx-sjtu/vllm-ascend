@@ -329,6 +329,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
         self.actual_seq_lengths_q: list[int] = []
         self.decode_token_per_req = 1
         if self.speculative_config:
+            self.speculative_config.method = "glm4_moe_mtp"
             spec_token_num = self.speculative_config.num_speculative_tokens
             assert spec_token_num > 0
             self.decode_token_per_req = 1 + spec_token_num
@@ -537,6 +538,9 @@ class NPUModelRunner(LoRAModelRunnerMixin):
             self.input_batch.num_accepted_tokens_cpu[i] = num_tokens
 
     def _use_aclgraph(self) -> bool:
+        print(f"self.compilation_config.cudagraph_mode:{self.compilation_config.cudagraph_mode}")
+        print(f"self.compilation_config.level:{self.compilation_config.level}")
+        print(f"self.model_config.enforce_eager:{self.model_config.enforce_eager}")
         return self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE and self.compilation_config.level == CompilationLevel.PIECEWISE and not self.model_config.enforce_eager
 
     def _update_states(self, scheduler_output: "SchedulerOutput") -> None:
@@ -880,6 +884,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
     def _make_attention_mask(self, seq_lens, position,
                              attn_state) -> torch.Tensor:
         # Chunk Prefill situation.
+        #print(f"attn_state:{attn_state}")
         if attn_state == AscendAttentionState.ChunkedPrefill and not self.vllm_config.model_config.use_mla:
             if torch.version.cann.startswith("8.3"):
                 return self.attn_mask_builder.get_splitfuse_attn_mask()
@@ -1485,7 +1490,8 @@ class NPUModelRunner(LoRAModelRunnerMixin):
                 slot_mapping[:total_num_scheduled_tokens],
                 non_blocking=True,
             )
-
+           
+            #print(f"attn_mask:{self.attn_mask}, :num_reqs:{num_reqs}, blk_table_tensor:{blk_table_tensor.shape}")
             # Make AscendCommonAttentionMetadata
             common_attn_metadata = AscendCommonAttentionMetadata(
                 query_start_loc=self.query_start_loc[:num_reqs + 1],
@@ -1585,6 +1591,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
     def _build_attn_state(self, num_reqs, num_scheduled_tokens,
                           num_valid_tokens):
         ascend_config = get_ascend_config()
+        #print(f"method:{self.speculative_config.method}, num_scheduled_tokens:{num_scheduled_tokens}, num_valid_tokens:{num_valid_tokens}, self.drafter:{self.drafter}")
         if np.array_equal(self.seq_lens_np[:num_reqs], num_scheduled_tokens):
             attn_state = AscendAttentionState.PrefillNoCache
         # We assume it is the decode stage, where prefill occurs but only one token is not hit in cache.
@@ -1596,11 +1603,12 @@ class NPUModelRunner(LoRAModelRunnerMixin):
                 attn_state = AscendAttentionState.SpecDecoding
         # Speculative decoding.
         elif np.all(num_valid_tokens == 1):
-            if self.drafter and (self.drafter.name == SpecDcodeType.EAGLE
-                                 or self.drafter.name == SpecDcodeType.EAGLE3):
-                attn_state = AscendAttentionState.ChunkedPrefill
-            else:
+            if self.drafter and self.speculative_config.method == 'deepseek_mtp':
                 attn_state = AscendAttentionState.SpecDecoding
+                #print("111")
+            else:
+                #print("2222")
+                attn_state = AscendAttentionState.ChunkedPrefill
         # splitfuse
         elif not ascend_config.ascend_scheduler_config.enabled or self.chunked_prefill_enabled:
             attn_state = AscendAttentionState.ChunkedPrefill
@@ -1924,6 +1932,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
         aclgraph_runtime_mode, batch_descriptor = \
             self.aclgraph_dispatcher.dispatch(batch_descriptor)
 
+        #print(f"forward main")
         # Run forward pass
         with ProfileExecuteDuration().capture_async("forward"):
             with set_ascend_forward_context(
@@ -1950,6 +1959,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
             finished_sending, finished_recving = self.get_finished_kv_transfer(
                 scheduler_output)
 
+            #print(f"after main forward")
             aux_hidden_states = None
             if self.drafter and self.drafter.name == SpecDcodeType.EAGLE3:
                 hidden_states, aux_hidden_states = hidden_states
@@ -2377,7 +2387,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
             with_prefill = True
 
         attn_metadata = self._build_attention_metadata(
-            with_prefill,
+            False,
             num_reqs,
             num_tokens,
             max_query_len,
@@ -3378,6 +3388,7 @@ class NPUModelRunner(LoRAModelRunnerMixin):
                 "ensure `aclraph_mode` was not manually set to `NONE`")
             return
         else:
+            print("capture graph success")
             self.initialize_aclgraph_capture()
 
         set_cudagraph_capturing_enabled(True)

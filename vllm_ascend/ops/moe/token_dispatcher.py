@@ -345,7 +345,12 @@ class TokenDispatcherWithAllGather(MoETokenDispatcher):
             ), "Only support topk=1 when `apply_router_weight_on_input` is True"
             hidden_states = hidden_states * \
                 topk_weights.to(hidden_states.dtype)
+        #print("==== Debug Info ====")
+        #print(f"expert_map type={type(expert_map)}, device={getattr(expert_map, 'device', None)}, dtype={getattr(expert_map, 'dtype', None)}, shape={getattr(expert_map, 'shape', None)}")
+        #print(f"topk_ids type={type(topk_ids)}, device={getattr(topk_ids, 'device', None)}, dtype={getattr(topk_ids, 'dtype', None)}, shape={getattr(topk_ids, 'shape', None)}")
+
         if expert_map is not None:
+            #expert_map = expert_map.to(topk_ids.device)
             global_num_experts = len(expert_map)
             mask = (expert_map[topk_ids] != -1)
             self.topk_weights = topk_weights * mask
